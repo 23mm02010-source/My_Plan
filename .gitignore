@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+dist/
+
+# Raw media & large video
+*.mp4
+Study_plan/
+video_samples/
+
+# Extraction scripts
+*.py
+*.json
+!package*.json
+!tsconfig*.json
+!full_verified_roadmap.json
+timeline_summary.txt
+*.log
+
+# Vercel & Env
+.vercel
+.env*
+
+# OS / Editor
+.DS_Store
+Thumbs.db
