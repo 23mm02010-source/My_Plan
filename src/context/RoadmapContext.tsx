@@ -66,9 +66,62 @@ interface RoadmapContextType {
   exportProgress: () => void;
   importProgress: (jsonString: string) => boolean;
   streak: number;
+  isTodayActive: boolean;
+  setStreak: (newStreak: number) => void;
 }
 
 const STORAGE_KEY = 'planly_user_progress_v1';
+
+export const getLocalDateString = (date: Date = new Date()): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+export const getPreviousDateString = (dateStr: string): string => {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() - 1);
+  return getLocalDateString(date);
+};
+
+export const calculateStreak = (
+  activeDates: string[],
+  totalCompleted: number,
+  manualStreak?: number
+): { streak: number; isTodayActive: boolean } => {
+  if (totalCompleted === 0) {
+    return { streak: 0, isTodayActive: false };
+  }
+
+  const today = getLocalDateString(new Date());
+  const datesSet = new Set(activeDates || []);
+  const isTodayActive = datesSet.has(today);
+
+  // If user set a custom streak baseline:
+  if (typeof manualStreak === 'number' && manualStreak > 0) {
+    const yesterday = getPreviousDateString(today);
+    if (isTodayActive || datesSet.has(yesterday)) {
+      return { streak: manualStreak, isTodayActive };
+    }
+  }
+
+  // Calculate backward consecutive streak
+  let count = 0;
+  let checkDate = isTodayActive ? today : getPreviousDateString(today);
+
+  if (!datesSet.has(checkDate)) {
+    return { streak: 0, isTodayActive: false };
+  }
+
+  while (datesSet.has(checkDate)) {
+    count++;
+    checkDate = getPreviousDateString(checkDate);
+  }
+
+  return { streak: count, isTodayActive };
+};
 
 const saveToStorage = (state: UserProgressState) => {
   try {
@@ -91,13 +144,18 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && typeof parsed.completedProblems === 'object') {
+          const completedCount = Object.keys(parsed.completedProblems).length;
           return {
             completedProblems: parsed.completedProblems || {},
             bookmarkedProblems: parsed.bookmarkedProblems || {},
             currentSprintId: parsed.currentSprintId || 1,
             currentDayNum: parsed.currentDayNum || 1,
-            streak: parsed.streak || 1,
-            lastActiveDate: parsed.lastActiveDate || new Date().toISOString().split('T')[0],
+            streak: parsed.streak ?? (completedCount > 0 ? 1 : 0),
+            lastActiveDate: parsed.lastActiveDate || getLocalDateString(),
+            activeDates: Array.isArray(parsed.activeDates)
+              ? parsed.activeDates
+              : (completedCount > 0 ? [getLocalDateString()] : []),
+            manualStreak: parsed.manualStreak,
             lastActiveView: parsed.lastActiveView || 'dashboard'
           };
         }
@@ -110,8 +168,9 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
       bookmarkedProblems: {},
       currentSprintId: 1,
       currentDayNum: 1,
-      streak: 1,
-      lastActiveDate: new Date().toISOString().split('T')[0],
+      streak: 0,
+      lastActiveDate: getLocalDateString(),
+      activeDates: [],
       lastActiveView: 'dashboard'
     };
   });
@@ -137,27 +196,6 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
     saveToStorage(progressState);
   }, [progressState]);
 
-  // Check and update streak on load
-  useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
-    if (progressState.lastActiveDate !== today) {
-      const lastDate = new Date(progressState.lastActiveDate);
-      const currDate = new Date(today);
-      const diffTime = Math.abs(currDate.getTime() - lastDate.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-      setProgressState(prev => {
-        const next = {
-          ...prev,
-          lastActiveDate: today,
-          streak: diffDays === 1 ? prev.streak + 1 : (diffDays > 1 ? 1 : prev.streak)
-        };
-        saveToStorage(next);
-        return next;
-      });
-    }
-  }, []);
-
   const isProblemCompleted = useCallback((problemId: string): boolean => {
     return !!progressState.completedProblems[problemId];
   }, [progressState.completedProblems]);
@@ -174,11 +212,17 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setProgressState(prev => {
       const isCurrentlyCompleted = !!prev.completedProblems[problemId];
       const updated = { ...prev.completedProblems };
+      const today = getLocalDateString();
+      const updatedDates = new Set(prev.activeDates || []);
       
       if (isCurrentlyCompleted) {
         delete updated[problemId];
+        if (Object.keys(updated).length === 0) {
+          updatedDates.clear();
+        }
       } else {
         updated[problemId] = true;
+        updatedDates.add(today);
       }
 
       if (!isCurrentlyCompleted) {
@@ -199,9 +243,16 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       }
 
+      const activeDatesArr = Array.from(updatedDates);
+      const totalCount = Object.keys(updated).length;
+      const { streak: calculatedStreak } = calculateStreak(activeDatesArr, totalCount, prev.manualStreak);
+
       const next = {
         ...prev,
-        completedProblems: updated
+        completedProblems: updated,
+        activeDates: activeDatesArr,
+        lastActiveDate: today,
+        streak: calculatedStreak
       };
       saveToStorage(next);
       return next;
@@ -216,19 +267,36 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setProgressState(prev => {
       const updated = { ...prev.completedProblems };
+      const today = getLocalDateString();
+      const updatedDates = new Set(prev.activeDates || []);
+
       day.problems.forEach(p => {
         if (complete) {
           updated[p.id] = true;
+          updatedDates.add(today);
         } else {
           delete updated[p.id];
         }
       });
+
+      if (Object.keys(updated).length === 0) {
+        updatedDates.clear();
+      }
+
       if (complete) {
         fireCelebration();
       }
+
+      const activeDatesArr = Array.from(updatedDates);
+      const totalCount = Object.keys(updated).length;
+      const { streak: calculatedStreak } = calculateStreak(activeDatesArr, totalCount, prev.manualStreak);
+
       const next = {
         ...prev,
-        completedProblems: updated
+        completedProblems: updated,
+        activeDates: activeDatesArr,
+        lastActiveDate: today,
+        streak: calculatedStreak
       };
       saveToStorage(next);
       return next;
@@ -334,6 +402,27 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (totalProblems === 0) return 0;
     return Math.round((completedProblemsCount / totalProblems) * 100);
   }, [completedProblemsCount, totalProblems]);
+
+  const { streak: dynamicStreak, isTodayActive } = useMemo(() => {
+    return calculateStreak(
+      progressState.activeDates || [],
+      completedProblemsCount,
+      progressState.manualStreak
+    );
+  }, [progressState.activeDates, completedProblemsCount, progressState.manualStreak]);
+
+  const setManualStreak = useCallback((newStreak: number) => {
+    const valid = Math.max(0, Math.floor(newStreak));
+    setProgressState(prev => {
+      const next = {
+        ...prev,
+        manualStreak: valid,
+        streak: valid
+      };
+      saveToStorage(next);
+      return next;
+    });
+  }, []);
 
   // Day stats
   const getDayStats = useCallback((sprintId: number, dayNum: number): DayStats => {
@@ -506,13 +595,18 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       const parsed = JSON.parse(jsonString);
       if (parsed && typeof parsed.completedProblems === 'object') {
+        const completedCount = Object.keys(parsed.completedProblems || {}).length;
         const restored: UserProgressState = {
           completedProblems: parsed.completedProblems || {},
           bookmarkedProblems: parsed.bookmarkedProblems || {},
           currentSprintId: parsed.currentSprintId || 1,
           currentDayNum: parsed.currentDayNum || 1,
-          streak: parsed.streak || 1,
-          lastActiveDate: parsed.lastActiveDate || new Date().toISOString().split('T')[0],
+          streak: parsed.streak ?? (completedCount > 0 ? 1 : 0),
+          lastActiveDate: parsed.lastActiveDate || getLocalDateString(),
+          activeDates: Array.isArray(parsed.activeDates)
+            ? parsed.activeDates
+            : (completedCount > 0 ? [getLocalDateString()] : []),
+          manualStreak: parsed.manualStreak,
           lastActiveView: parsed.lastActiveView || 'dashboard'
         };
         setProgressState(restored);
@@ -568,7 +662,9 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
         resetAllProgress,
         exportProgress,
         importProgress,
-        streak: progressState.streak
+        streak: dynamicStreak,
+        isTodayActive,
+        setStreak: setManualStreak
       }}
     >
       {children}

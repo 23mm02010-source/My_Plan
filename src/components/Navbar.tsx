@@ -13,10 +13,25 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSidebar }) => {
     completedProblemsCount,
     totalProblems,
     streak,
+    isTodayActive,
+    setStreak,
     currentSprintId,
     currentDayNum,
     navigateToDay
   } = useRoadmap();
+
+  const handleStreakClick = () => {
+    const input = window.prompt(
+      `Your current study streak is ${streak} day(s).\n\nIf you want to sync your streak count with your previous takeUforward streak, enter the number of days:`,
+      String(streak)
+    );
+    if (input !== null) {
+      const val = parseInt(input.trim(), 10);
+      if (!isNaN(val) && val >= 0) {
+        setStreak(val);
+      }
+    }
+  };
 
   return (
     <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-card-border px-4 sm:px-8 py-3 flex items-center justify-between gap-4">
@@ -54,10 +69,21 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSidebar }) => {
         </button>
 
         {/* Streak Indicator */}
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-mono font-bold bg-amber-950/30 text-amber-400 border border-amber-800/40">
-          <Flame className="w-3.5 h-3.5 fill-amber-400" />
+        <button
+          type="button"
+          onClick={handleStreakClick}
+          title={isTodayActive ? `Streak: ${streak} day(s) (Active today! Click to adjust)` : `Streak: ${streak} day(s) (Solve a problem today to extend! Click to adjust)`}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-mono font-bold transition-all border ${
+            isTodayActive
+              ? 'bg-amber-950/40 text-amber-400 border-amber-800/50 hover:bg-amber-900/40'
+              : streak > 0
+              ? 'bg-slate-900 text-slate-300 border-slate-700/60 hover:text-amber-400'
+              : 'bg-slate-900/60 text-slate-500 border-slate-800 hover:text-slate-300'
+          }`}
+        >
+          <Flame className={`w-3.5 h-3.5 ${isTodayActive ? 'fill-amber-400 text-amber-400 animate-pulse' : streak > 0 ? 'text-amber-500 fill-amber-500/40' : 'text-slate-500'}`} />
           <span>{streak}</span>
-        </div>
+        </button>
 
         {/* Solved Problems Count */}
         <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-mono font-medium bg-slate-900/90 text-slate-300 border border-slate-800">

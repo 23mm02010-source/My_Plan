@@ -31,6 +31,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     navigateToSprint,
     overallPercentage,
     streak,
+    isTodayActive,
+    setStreak,
     completedProblemsCount,
     totalProblems
   } = useRoadmap();
@@ -219,10 +221,32 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               </div>
             </div>
 
-            <div className="flex items-center gap-1 text-amber-400 bg-amber-950/40 px-2 py-0.5 rounded-md border border-amber-800/30 text-xs font-mono font-bold">
-              <Flame className="w-3.5 h-3.5 fill-amber-400" />
+            <button
+              type="button"
+              onClick={() => {
+                const input = window.prompt(
+                  `Your current study streak is ${streak} day(s).\n\nIf you want to sync your streak count with your previous takeUforward streak, enter the number of days:`,
+                  String(streak)
+                );
+                if (input !== null) {
+                  const val = parseInt(input.trim(), 10);
+                  if (!isNaN(val) && val >= 0) {
+                    setStreak(val);
+                  }
+                }
+              }}
+              title={isTodayActive ? `Streak: ${streak} day(s) (Active today! Click to adjust)` : `Streak: ${streak} day(s) (Solve a problem today to extend! Click to adjust)`}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-xs font-mono font-bold transition-all cursor-pointer ${
+                isTodayActive
+                  ? 'bg-amber-950/40 text-amber-400 border-amber-800/40 hover:bg-amber-900/40'
+                  : streak > 0
+                  ? 'bg-slate-900 text-slate-300 border-slate-700 hover:text-amber-400'
+                  : 'bg-slate-900/60 text-slate-500 border-slate-800 hover:text-slate-300'
+              }`}
+            >
+              <Flame className={`w-3.5 h-3.5 ${isTodayActive ? 'fill-amber-400 text-amber-400' : streak > 0 ? 'text-amber-500 fill-amber-500/40' : 'text-slate-500'}`} />
               <span>{streak}</span>
-            </div>
+            </button>
           </div>
         </div>
       </aside>

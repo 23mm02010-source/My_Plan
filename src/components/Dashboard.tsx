@@ -33,8 +33,23 @@ export const Dashboard: React.FC = () => {
     getDayStats,
     getSprintStats,
     getSubjectStats,
-    streak
+    streak,
+    isTodayActive,
+    setStreak
   } = useRoadmap();
+
+  const handleStreakClick = () => {
+    const input = window.prompt(
+      `Your current study streak is ${streak} day(s).\n\nIf you want to sync your streak count with your previous takeUforward streak, enter the number of days:`,
+      String(streak)
+    );
+    if (input !== null) {
+      const val = parseInt(input.trim(), 10);
+      if (!isNaN(val) && val >= 0) {
+        setStreak(val);
+      }
+    }
+  };
 
   const currentSprint = roadmap.sprints.find(s => s.id === currentSprintId) || roadmap.sprints[0];
   const currentDay = currentSprint.days.find(d => d.day === currentDayNum) || currentSprint.days[0];
@@ -61,10 +76,14 @@ export const Dashboard: React.FC = () => {
 
         {/* Streak & Overall Stats Pill */}
         <div className="flex items-center gap-3 self-start sm:self-auto">
-          <div className="flex items-center gap-2 bg-card border border-card-border px-3.5 py-2 rounded-2xl shadow-sm">
-            <Flame className="w-5 h-5 text-amber-500 fill-amber-500 animate-pulse" />
+          <div
+            onClick={handleStreakClick}
+            title={isTodayActive ? `Streak: ${streak} day(s) (Active today! Click to adjust)` : `Streak: ${streak} day(s) (Solve a problem today to extend! Click to adjust)`}
+            className="flex items-center gap-2 bg-card border border-card-border px-3.5 py-2 rounded-2xl shadow-sm cursor-pointer hover:border-amber-500/50 transition-colors group"
+          >
+            <Flame className={`w-5 h-5 ${isTodayActive ? 'text-amber-500 fill-amber-500 animate-pulse' : streak > 0 ? 'text-amber-500 fill-amber-500/40' : 'text-slate-500'}`} />
             <div>
-              <div className="text-[10px] uppercase font-semibold text-slate-400">Current Streak</div>
+              <div className="text-[10px] uppercase font-semibold text-slate-400 group-hover:text-amber-400 transition-colors">Current Streak</div>
               <div className="text-sm font-bold font-mono text-white">{streak} Days</div>
             </div>
           </div>
