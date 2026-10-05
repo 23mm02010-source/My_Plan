@@ -13,6 +13,7 @@ import {
   X
 } from 'lucide-react';
 import { useRoadmap } from '../context/RoadmapContext';
+import { useAuth } from '../context/AuthContext';
 import { ViewMode } from '../types';
 
 interface SidebarProps {
@@ -36,6 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     completedProblemsCount,
     totalProblems
   } = useRoadmap();
+  const { user } = useAuth();
 
   const navItems: { id: ViewMode; label: string; icon: React.ElementType; badge?: string }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -211,13 +213,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
           {/* Profile pill */}
           <div className="flex items-center justify-between p-2 rounded-xl bg-card border border-card-border">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-primary-900/60 border border-primary-700/60 flex items-center justify-center text-primary-300 font-bold text-xs">
-                S
+            <div className="flex items-center gap-2.5 min-w-0 pr-2">
+              <div className="w-7 h-7 rounded-lg bg-primary-900/60 border border-primary-700/60 flex items-center justify-center text-primary-300 font-bold text-xs uppercase shrink-0">
+                {user?.name ? user.name.trim()[0] : 'S'}
               </div>
-              <div>
-                <div className="text-xs font-bold text-white leading-tight">Shaik</div>
-                <div className="text-[10px] text-emerald-400 font-semibold">Active Prep</div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-white leading-tight truncate">
+                  {user?.name || 'Shaik'}
+                </div>
+                <div className="text-[10px] text-emerald-400 font-semibold truncate">
+                  {user?.email ? user.email.split('@')[0] : 'Active Prep'}
+                </div>
               </div>
             </div>
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { Menu, Search, Flame, CheckCircle2, Calendar } from 'lucide-react';
 import { useRoadmap } from '../context/RoadmapContext';
 import { Breadcrumbs } from './Breadcrumbs';
+import { UserProfileMenu } from './UserProfileMenu';
 
 interface NavbarProps {
   onOpenSidebar: () => void;
@@ -90,6 +91,9 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSidebar }) => {
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
           <span>{completedProblemsCount} / {totalProblems}</span>
         </div>
+
+        {/* User Account / Profile Menu */}
+        <UserProfileMenu />
       </div>
     </header>
   );

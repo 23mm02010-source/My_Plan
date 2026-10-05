@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { RoadmapProvider, useRoadmap } from './context/RoadmapContext';
+import { AuthModal } from './components/AuthModal';
 import { Sidebar } from './components/Sidebar';
 import { Navbar } from './components/Navbar';
 import { Dashboard } from './components/Dashboard';
@@ -10,8 +12,22 @@ import { ProgressPage } from './components/ProgressPage';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
 
 const AppContent: React.FC = () => {
+  const { isAuthenticated, isLoading } = useAuth();
   const { activeView } = useRoadmap();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
+        <div className="w-10 h-10 border-3 border-primary-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-xs text-slate-400 font-mono">Loading your study plan...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <AuthModal />;
+  }
 
   const renderActiveView = () => {
     switch (activeView) {
@@ -52,9 +68,11 @@ const AppContent: React.FC = () => {
 
 export const App: React.FC = () => {
   return (
-    <RoadmapProvider>
-      <AppContent />
-    </RoadmapProvider>
+    <AuthProvider>
+      <RoadmapProvider>
+        <AppContent />
+      </RoadmapProvider>
+    </AuthProvider>
   );
 };
 

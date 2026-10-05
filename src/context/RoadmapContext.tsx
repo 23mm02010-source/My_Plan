@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import confetti from 'canvas-confetti';
 import { ROADMAP_DATA } from '../data/roadmapData';
 import { Problem, Day, Sprint, ViewMode, UserProgressState } from '../types';
+import { useAuth } from './AuthContext';
 
 interface SubjectStats {
   subject: string;
@@ -123,56 +124,82 @@ export const calculateStreak = (
   return { streak: consecutiveDays + baselineOffset, isTodayActive };
 };
 
-const saveToStorage = (state: UserProgressState) => {
+const loadProgressForUser = (key: string): UserProgressState => {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch (e: any) {
-    console.error('Failed to save progress to localStorage', e);
-    if (e?.name === 'QuotaExceededError' || e?.code === 22) {
-      alert('Storage Alert: Your device or browser storage is full. Please clear some disk space so your progress can be saved.');
-    }
-  }
-};
-
-const RoadmapContext = createContext<RoadmapContextType | undefined>(undefined);
-
-export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Load initial state from localStorage
-  const [progressState, setProgressState] = useState<UserProgressState>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed.completedProblems === 'object') {
+        const completedCount = Object.keys(parsed.completedProblems).length;
+        return {
+          completedProblems: parsed.completedProblems || {},
+          bookmarkedProblems: parsed.bookmarkedProblems || {},
+          currentSprintId: parsed.currentSprintId || 1,
+          currentDayNum: parsed.currentDayNum || 1,
+          streak: parsed.streak ?? (completedCount > 0 ? 1 : 0),
+          lastActiveDate: parsed.lastActiveDate || getLocalDateString(),
+          activeDates: Array.isArray(parsed.activeDates)
+            ? parsed.activeDates
+            : (completedCount > 0 ? [getLocalDateString()] : []),
+          manualStreak: parsed.manualStreak,
+          lastActiveView: parsed.lastActiveView || 'dashboard'
+        };
+      }
+    } else {
+      // Check legacy migration if first time
+      const legacy = localStorage.getItem('planly_user_progress_v1');
+      if (legacy) {
+        const parsed = JSON.parse(legacy);
         if (parsed && typeof parsed.completedProblems === 'object') {
-          const completedCount = Object.keys(parsed.completedProblems).length;
           return {
             completedProblems: parsed.completedProblems || {},
             bookmarkedProblems: parsed.bookmarkedProblems || {},
             currentSprintId: parsed.currentSprintId || 1,
             currentDayNum: parsed.currentDayNum || 1,
-            streak: parsed.streak ?? (completedCount > 0 ? 1 : 0),
+            streak: parsed.streak || 0,
             lastActiveDate: parsed.lastActiveDate || getLocalDateString(),
-            activeDates: Array.isArray(parsed.activeDates)
-              ? parsed.activeDates
-              : (completedCount > 0 ? [getLocalDateString()] : []),
+            activeDates: parsed.activeDates || [],
             manualStreak: parsed.manualStreak,
             lastActiveView: parsed.lastActiveView || 'dashboard'
           };
         }
       }
-    } catch (e) {
-      console.error('Failed to load progress from localStorage', e);
     }
-    return {
-      completedProblems: {},
-      bookmarkedProblems: {},
-      currentSprintId: 1,
-      currentDayNum: 1,
-      streak: 0,
-      lastActiveDate: getLocalDateString(),
-      activeDates: [],
-      lastActiveView: 'dashboard'
-    };
+  } catch (e) {
+    console.error('Failed to load progress from localStorage', e);
+  }
+  return {
+    completedProblems: {},
+    bookmarkedProblems: {},
+    currentSprintId: 1,
+    currentDayNum: 1,
+    streak: 0,
+    lastActiveDate: getLocalDateString(),
+    activeDates: [],
+    lastActiveView: 'dashboard'
+  };
+};
+
+const RoadmapContext = createContext<RoadmapContextType | undefined>(undefined);
+
+export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+  const currentStorageKey = user ? `planly_user_progress_${user.id}` : 'planly_user_progress_guest';
+
+  const saveToStorage = useCallback((state: UserProgressState) => {
+    try {
+      localStorage.setItem(currentStorageKey, JSON.stringify(state));
+    } catch (e: any) {
+      console.error('Failed to save progress to localStorage', e);
+      if (e?.name === 'QuotaExceededError' || e?.code === 22) {
+        alert('Storage Alert: Your device or browser storage is full. Please clear some disk space so your progress can be saved.');
+      }
+    }
+  }, [currentStorageKey]);
+
+  // Load initial state for the active user
+  const [progressState, setProgressState] = useState<UserProgressState>(() => {
+    return loadProgressForUser(currentStorageKey);
   });
 
   const [activeView, setActiveViewInternal] = useState<ViewMode>(progressState.lastActiveView || 'dashboard');
@@ -182,6 +209,17 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [filter, setFilter] = useState<'all' | 'completed' | 'pending'>('all');
 
+  // Reload progress when user changes (login, logout, switch account)
+  useEffect(() => {
+    const loaded = loadProgressForUser(currentStorageKey);
+    setProgressState(loaded);
+    setSelectedSprintId(loaded.currentSprintId || 1);
+    setSelectedDayNum(loaded.currentDayNum || 1);
+    if (loaded.lastActiveView) {
+      setActiveViewInternal(loaded.lastActiveView);
+    }
+  }, [user?.id, currentStorageKey]);
+
   const setActiveView = useCallback((view: ViewMode) => {
     setActiveViewInternal(view);
     setProgressState(prev => {
@@ -189,12 +227,12 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
       saveToStorage(next);
       return next;
     });
-  }, []);
+  }, [saveToStorage]);
 
   // Sync to localStorage as an extra safety measure
   useEffect(() => {
     saveToStorage(progressState);
-  }, [progressState]);
+  }, [progressState, saveToStorage]);
 
   const isProblemCompleted = useCallback((problemId: string): boolean => {
     return !!progressState.completedProblems[problemId];
