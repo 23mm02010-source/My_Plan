@@ -13,6 +13,7 @@ video_samples/
 !package*.json
 !tsconfig*.json
 !full_verified_roadmap.json
+!vercel.json
 timeline_summary.txt
 *.log
 
