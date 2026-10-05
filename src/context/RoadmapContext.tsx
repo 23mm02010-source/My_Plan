@@ -91,6 +91,7 @@ export const calculateStreak = (
   totalCompleted: number,
   manualStreak?: number
 ): { streak: number; isTodayActive: boolean } => {
+  // Rule: If 0 problems solved total, streak is 0
   if (totalCompleted === 0) {
     return { streak: 0, isTodayActive: false };
   }
@@ -98,29 +99,28 @@ export const calculateStreak = (
   const today = getLocalDateString(new Date());
   const datesSet = new Set(activeDates || []);
   const isTodayActive = datesSet.has(today);
+  const yesterday = getPreviousDateString(today);
 
-  // If user set a custom streak baseline:
-  if (typeof manualStreak === 'number' && manualStreak > 0) {
-    const yesterday = getPreviousDateString(today);
-    if (isTodayActive || datesSet.has(yesterday)) {
-      return { streak: manualStreak, isTodayActive };
-    }
-  }
-
-  // Calculate backward consecutive streak
-  let count = 0;
-  let checkDate = isTodayActive ? today : getPreviousDateString(today);
-
-  if (!datesSet.has(checkDate)) {
+  // Rule: If neither today nor yesterday had a solved problem, the streak has broken
+  if (!isTodayActive && !datesSet.has(yesterday)) {
     return { streak: 0, isTodayActive: false };
   }
 
+  // Count consecutive days backward from the last active day
+  let consecutiveDays = 0;
+  let checkDate = isTodayActive ? today : yesterday;
+
   while (datesSet.has(checkDate)) {
-    count++;
+    consecutiveDays++;
     checkDate = getPreviousDateString(checkDate);
   }
 
-  return { streak: count, isTodayActive };
+  // If user imported/set a manual starting baseline from their previous streak:
+  const baselineOffset = (typeof manualStreak === 'number' && manualStreak > 0)
+    ? Math.max(0, manualStreak - 1)
+    : 0;
+
+  return { streak: consecutiveDays + baselineOffset, isTodayActive };
 };
 
 const saveToStorage = (state: UserProgressState) => {
