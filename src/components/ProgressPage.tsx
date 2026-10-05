@@ -8,7 +8,9 @@ import {
   Code2,
   Layers,
   BookOpen,
-  RotateCcw
+  RotateCcw,
+  Download,
+  Upload
 } from 'lucide-react';
 import { useRoadmap } from '../context/RoadmapContext';
 import { ProgressBar } from './ProgressBar';
@@ -27,6 +29,8 @@ export const ProgressPage: React.FC = () => {
     getSubjectStats,
     navigateToSprint,
     resetAllProgress,
+    exportProgress,
+    importProgress,
     streak
   } = useRoadmap();
 
@@ -50,13 +54,48 @@ export const ProgressPage: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={resetAllProgress}
-          className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-rose-400 bg-rose-950/30 border border-rose-800/40 hover:bg-rose-900/40 transition-colors"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          <span>Reset All Progress</span>
-        </button>
+        <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+          <button
+            onClick={exportProgress}
+            title="Download a backup file of your solved problems"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-primary-400 bg-primary-950/40 border border-primary-800/50 hover:bg-primary-900/50 transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Export Backup</span>
+          </button>
+
+          <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 bg-slate-800/80 border border-slate-700 hover:bg-slate-700/80 cursor-pointer transition-colors">
+            <Upload className="w-3.5 h-3.5" />
+            <span>Import Backup</span>
+            <input
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onload = (event) => {
+                    const content = event.target?.result as string;
+                    if (content) {
+                      importProgress(content);
+                    }
+                  };
+                  reader.readAsText(file);
+                }
+                e.target.value = '';
+              }}
+            />
+          </label>
+
+          <button
+            onClick={resetAllProgress}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-400 bg-rose-950/30 border border-rose-800/40 hover:bg-rose-900/40 transition-colors"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Reset All</span>
+          </button>
+        </div>
       </div>
 
       {/* Main Highlights Card */}

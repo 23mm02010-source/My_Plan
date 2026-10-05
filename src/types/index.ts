@@ -38,4 +38,5 @@ export interface UserProgressState {
   currentDayNum: number;
   streak: number;
   lastActiveDate: string;
+  lastActiveView?: ViewMode;
 }

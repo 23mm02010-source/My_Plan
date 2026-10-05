@@ -63,10 +63,23 @@ interface RoadmapContextType {
   getDayStats: (sprintId: number, dayNum: number) => DayStats;
   getSubjectStats: () => SubjectStats[];
   resetAllProgress: () => void;
+  exportProgress: () => void;
+  importProgress: (jsonString: string) => boolean;
   streak: number;
 }
 
 const STORAGE_KEY = 'planly_user_progress_v1';
+
+const saveToStorage = (state: UserProgressState) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e: any) {
+    console.error('Failed to save progress to localStorage', e);
+    if (e?.name === 'QuotaExceededError' || e?.code === 22) {
+      alert('Storage Alert: Your device or browser storage is full. Please clear some disk space so your progress can be saved.');
+    }
+  }
+};
 
 const RoadmapContext = createContext<RoadmapContextType | undefined>(undefined);
 
@@ -76,7 +89,18 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed.completedProblems === 'object') {
+          return {
+            completedProblems: parsed.completedProblems || {},
+            bookmarkedProblems: parsed.bookmarkedProblems || {},
+            currentSprintId: parsed.currentSprintId || 1,
+            currentDayNum: parsed.currentDayNum || 1,
+            streak: parsed.streak || 1,
+            lastActiveDate: parsed.lastActiveDate || new Date().toISOString().split('T')[0],
+            lastActiveView: parsed.lastActiveView || 'dashboard'
+          };
+        }
       }
     } catch (e) {
       console.error('Failed to load progress from localStorage', e);
@@ -87,24 +111,30 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
       currentSprintId: 1,
       currentDayNum: 1,
       streak: 1,
-      lastActiveDate: new Date().toISOString().split('T')[0]
+      lastActiveDate: new Date().toISOString().split('T')[0],
+      lastActiveView: 'dashboard'
     };
   });
 
-  const [activeView, setActiveView] = useState<ViewMode>('dashboard');
+  const [activeView, setActiveViewInternal] = useState<ViewMode>(progressState.lastActiveView || 'dashboard');
   const [selectedSprintId, setSelectedSprintId] = useState<number>(progressState.currentSprintId || 1);
   const [selectedDayNum, setSelectedDayNum] = useState<number>(progressState.currentDayNum || 1);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [filter, setFilter] = useState<'all' | 'completed' | 'pending'>('all');
 
-  // Sync to localStorage
+  const setActiveView = useCallback((view: ViewMode) => {
+    setActiveViewInternal(view);
+    setProgressState(prev => {
+      const next = { ...prev, lastActiveView: view };
+      saveToStorage(next);
+      return next;
+    });
+  }, []);
+
+  // Sync to localStorage as an extra safety measure
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(progressState));
-    } catch (e) {
-      console.error('Failed to save progress to localStorage', e);
-    }
+    saveToStorage(progressState);
   }, [progressState]);
 
   // Check and update streak on load
@@ -116,11 +146,15 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const diffTime = Math.abs(currDate.getTime() - lastDate.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-      setProgressState(prev => ({
-        ...prev,
-        lastActiveDate: today,
-        streak: diffDays === 1 ? prev.streak + 1 : (diffDays > 1 ? 1 : prev.streak)
-      }));
+      setProgressState(prev => {
+        const next = {
+          ...prev,
+          lastActiveDate: today,
+          streak: diffDays === 1 ? prev.streak + 1 : (diffDays > 1 ? 1 : prev.streak)
+        };
+        saveToStorage(next);
+        return next;
+      });
     }
   }, []);
 
@@ -139,14 +173,15 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const toggleProblem = useCallback((problemId: string) => {
     setProgressState(prev => {
       const isCurrentlyCompleted = !!prev.completedProblems[problemId];
-      const updated = {
-        ...prev.completedProblems,
-        [problemId]: !isCurrentlyCompleted
-      };
+      const updated = { ...prev.completedProblems };
+      
+      if (isCurrentlyCompleted) {
+        delete updated[problemId];
+      } else {
+        updated[problemId] = true;
+      }
 
       if (!isCurrentlyCompleted) {
-        // Find problem and check if its day or sprint is now completed!
-        // We can trigger a gentle celebratory confetti
         let newlyCompletedDay = false;
         for (const sp of ROADMAP_DATA.sprints) {
           for (const d of sp.days) {
@@ -164,10 +199,12 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       }
 
-      return {
+      const next = {
         ...prev,
         completedProblems: updated
       };
+      saveToStorage(next);
+      return next;
     });
   }, []);
 
@@ -189,31 +226,56 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (complete) {
         fireCelebration();
       }
-      return {
+      const next = {
         ...prev,
         completedProblems: updated
       };
+      saveToStorage(next);
+      return next;
     });
   }, []);
 
   const setCurrentActiveDay = useCallback((sprintId: number, dayNum: number) => {
-    setProgressState(prev => ({
-      ...prev,
-      currentSprintId: sprintId,
-      currentDayNum: dayNum
-    }));
+    setProgressState(prev => {
+      const next = {
+        ...prev,
+        currentSprintId: sprintId,
+        currentDayNum: dayNum
+      };
+      saveToStorage(next);
+      return next;
+    });
   }, []);
 
   const navigateToDay = useCallback((sprintId: number, dayNum: number) => {
     setSelectedSprintId(sprintId);
     setSelectedDayNum(dayNum);
-    setActiveView('day');
+    setActiveViewInternal('day');
+    setProgressState(prev => {
+      const next = {
+        ...prev,
+        currentSprintId: sprintId,
+        currentDayNum: dayNum,
+        lastActiveView: 'day' as ViewMode
+      };
+      saveToStorage(next);
+      return next;
+    });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
   const navigateToSprint = useCallback((sprintId: number) => {
     setSelectedSprintId(sprintId);
-    setActiveView('sprint');
+    setActiveViewInternal('sprint');
+    setProgressState(prev => {
+      const next = {
+        ...prev,
+        currentSprintId: sprintId,
+        lastActiveView: 'sprint' as ViewMode
+      };
+      saveToStorage(next);
+      return next;
+    });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
@@ -411,15 +473,58 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const resetAllProgress = useCallback(() => {
     if (window.confirm('Are you sure you want to reset all your DSA roadmap progress? This cannot be undone.')) {
-      setProgressState({
+      const resetState: UserProgressState = {
         completedProblems: {},
         bookmarkedProblems: {},
         currentSprintId: 1,
         currentDayNum: 1,
         streak: 1,
-        lastActiveDate: new Date().toISOString().split('T')[0]
-      });
+        lastActiveDate: new Date().toISOString().split('T')[0],
+        lastActiveView: 'dashboard'
+      };
+      setProgressState(resetState);
+      saveToStorage(resetState);
     }
+  }, []);
+
+  const exportProgress = useCallback(() => {
+    try {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(progressState, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `my_dsa_plan_backup_${new Date().toISOString().split('T')[0]}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    } catch (e) {
+      console.error('Failed to export progress', e);
+      alert('Failed to generate export backup file.');
+    }
+  }, [progressState]);
+
+  const importProgress = useCallback((jsonString: string): boolean => {
+    try {
+      const parsed = JSON.parse(jsonString);
+      if (parsed && typeof parsed.completedProblems === 'object') {
+        const restored: UserProgressState = {
+          completedProblems: parsed.completedProblems || {},
+          bookmarkedProblems: parsed.bookmarkedProblems || {},
+          currentSprintId: parsed.currentSprintId || 1,
+          currentDayNum: parsed.currentDayNum || 1,
+          streak: parsed.streak || 1,
+          lastActiveDate: parsed.lastActiveDate || new Date().toISOString().split('T')[0],
+          lastActiveView: parsed.lastActiveView || 'dashboard'
+        };
+        setProgressState(restored);
+        saveToStorage(restored);
+        alert('Your study progress was successfully imported and restored!');
+        return true;
+      }
+    } catch (e) {
+      console.error('Failed to import progress', e);
+      alert('Invalid backup JSON format. Please upload a valid exported backup file.');
+    }
+    return false;
   }, []);
 
   return (
@@ -461,6 +566,8 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
         getDayStats,
         getSubjectStats,
         resetAllProgress,
+        exportProgress,
+        importProgress,
         streak: progressState.streak
       }}
     >
