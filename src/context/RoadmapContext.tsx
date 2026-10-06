@@ -3,6 +3,8 @@ import confetti from 'canvas-confetti';
 import { ROADMAP_DATA } from '../data/roadmapData';
 import { Problem, Day, Sprint, ViewMode, UserProgressState } from '../types';
 import { useAuth } from './AuthContext';
+import { firestoreDb } from '../config/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 interface SubjectStats {
   subject: string;
@@ -69,6 +71,8 @@ interface RoadmapContextType {
   streak: number;
   isTodayActive: boolean;
   setStreak: (newStreak: number) => void;
+  isCloudSyncing: boolean;
+  syncToCloudNow: () => Promise<void>;
 }
 
 const STORAGE_KEY = 'planly_user_progress_v1';
@@ -208,8 +212,30 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [filter, setFilter] = useState<'all' | 'completed' | 'pending'>('all');
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
 
-  // Reload progress when user changes (login, logout, switch account)
+  // Sync state to Cloud Firestore
+  const syncToCloud = useCallback(async (stateToSave: UserProgressState) => {
+    const db = firestoreDb;
+    if (!user?.id || !db) return;
+    try {
+      setIsCloudSyncing(true);
+      const progressDocRef = doc(db, 'user_progress', user.id);
+      await setDoc(progressDocRef, {
+        ...stateToSave,
+        userId: user.id,
+        userEmail: user.email,
+        userName: user.name,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      console.warn('Failed to sync progress to cloud database:', err);
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  }, [user]);
+
+  // Reload progress when user changes (login, logout, switch account) + pull from Firestore
   useEffect(() => {
     const loaded = loadProgressForUser(currentStorageKey);
     setProgressState(loaded);
@@ -218,7 +244,73 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (loaded.lastActiveView) {
       setActiveViewInternal(loaded.lastActiveView);
     }
-  }, [user?.id, currentStorageKey]);
+
+    const db = firestoreDb;
+    if (!user?.id || !db) return;
+
+    let isMounted = true;
+    const fetchCloudProgress = async () => {
+      try {
+        setIsCloudSyncing(true);
+        const progressDocRef = doc(db, 'user_progress', user.id);
+        const snap = await getDoc(progressDocRef);
+        if (snap.exists() && isMounted) {
+          const cloudData = snap.data() as Partial<UserProgressState>;
+          if (cloudData.completedProblems) {
+            setProgressState(prev => {
+              const mergedProblems = {
+                ...prev.completedProblems,
+                ...cloudData.completedProblems
+              };
+              const activeDates = Array.from(new Set([
+                ...(prev.activeDates || []),
+                ...(cloudData.activeDates || [])
+              ]));
+
+              const merged: UserProgressState = {
+                completedProblems: mergedProblems,
+                bookmarkedProblems: {
+                  ...prev.bookmarkedProblems,
+                  ...cloudData.bookmarkedProblems
+                },
+                currentSprintId: cloudData.currentSprintId || prev.currentSprintId || 1,
+                currentDayNum: cloudData.currentDayNum || prev.currentDayNum || 1,
+                streak: Math.max(prev.streak || 0, cloudData.streak || 0),
+                lastActiveDate: cloudData.lastActiveDate || prev.lastActiveDate || getLocalDateString(),
+                activeDates,
+                manualStreak: cloudData.manualStreak ?? prev.manualStreak,
+                lastActiveView: cloudData.lastActiveView || prev.lastActiveView || 'dashboard'
+              };
+
+              saveToStorage(merged);
+              return merged;
+            });
+          }
+        } else if (!snap.exists() && isMounted) {
+          // If Firestore doc doesn't exist yet, push initial local data to Firestore
+          const currentLocal = loadProgressForUser(currentStorageKey);
+          if (Object.keys(currentLocal.completedProblems).length > 0) {
+            await setDoc(progressDocRef, {
+              ...currentLocal,
+              userId: user.id,
+              userEmail: user.email,
+              userName: user.name,
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch user progress from Firestore:', err);
+      } finally {
+        if (isMounted) setIsCloudSyncing(false);
+      }
+    };
+
+    fetchCloudProgress();
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id, firestoreDb, currentStorageKey, saveToStorage]);
 
   const setActiveView = useCallback((view: ViewMode) => {
     setActiveViewInternal(view);
@@ -229,10 +321,14 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   }, [saveToStorage]);
 
-  // Sync to localStorage as an extra safety measure
+  // Sync to localStorage and debounce sync to Cloud Firestore
   useEffect(() => {
     saveToStorage(progressState);
-  }, [progressState, saveToStorage]);
+    const timer = setTimeout(() => {
+      syncToCloud(progressState);
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [progressState, saveToStorage, syncToCloud]);
 
   const isProblemCompleted = useCallback((problemId: string): boolean => {
     return !!progressState.completedProblems[problemId];
@@ -702,7 +798,9 @@ export const RoadmapProvider: React.FC<{ children: React.ReactNode }> = ({ child
         importProgress,
         streak: dynamicStreak,
         isTodayActive,
-        setStreak: setManualStreak
+        setStreak: setManualStreak,
+        isCloudSyncing,
+        syncToCloudNow: () => syncToCloud(progressState)
       }}
     >
       {children}

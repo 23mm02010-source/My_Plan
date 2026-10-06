@@ -20,6 +20,7 @@ timeline_summary.txt
 # Vercel & Env
 .vercel
 .env*
+!.env.example
 
 # OS / Editor
 .DS_Store

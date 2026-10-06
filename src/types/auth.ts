@@ -13,5 +13,11 @@ export interface AuthState {
 }
 
 export interface StoredUserAccount extends User {
-  passwordHash: string; // Base64 or hash for local authentication
+  passwordHash: string; // Hash for local storage mode
+}
+
+export interface CloudDbStatus {
+  isConnected: boolean;
+  projectId?: string;
+  provider: 'firebase' | 'local';
 }
