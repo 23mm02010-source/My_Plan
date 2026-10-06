@@ -11,6 +11,16 @@ export interface FirebaseConfigParams {
   appId: string;
 }
 
+// Production Firebase Configuration for planly-dsa
+export const DEFAULT_FIREBASE_CONFIG: FirebaseConfigParams = {
+  apiKey: "AIzaSyDZmONK25XNstz-5YYxHmQSBAZg-84CXj8",
+  authDomain: "planly-dsa.firebaseapp.com",
+  projectId: "planly-dsa",
+  storageBucket: "planly-dsa.firebasestorage.app",
+  messagingSenderId: "547943088305",
+  appId: "1:547943088305:web:39e33fc5cd250ddeeee290"
+};
+
 const STORAGE_CUSTOM_CONFIG_KEY = 'planly_firebase_custom_config_v1';
 
 export const getSavedCustomConfig = (): FirebaseConfigParams | null => {
@@ -35,7 +45,7 @@ export const clearCustomConfig = (): void => {
   localStorage.removeItem(STORAGE_CUSTOM_CONFIG_KEY);
 };
 
-export const getActiveFirebaseConfig = (): FirebaseConfigParams | null => {
+export const getActiveFirebaseConfig = (): FirebaseConfigParams => {
   // 1. Check custom user config stored in browser
   const custom = getSavedCustomConfig();
   if (custom && custom.apiKey) {
@@ -46,7 +56,7 @@ export const getActiveFirebaseConfig = (): FirebaseConfigParams | null => {
   const envApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
   const envProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
 
-  if (envApiKey && envProjectId && envApiKey !== 'YOUR_FIREBASE_API_KEY') {
+  if (envApiKey && envProjectId && envApiKey !== 'YOUR_FIREBASE_API_KEY' && envApiKey !== 'your_api_key_here') {
     return {
       apiKey: envApiKey,
       authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || `${envProjectId}.firebaseapp.com`,
@@ -57,7 +67,8 @@ export const getActiveFirebaseConfig = (): FirebaseConfigParams | null => {
     };
   }
 
-  return null;
+  // 3. Fallback to production planly-dsa project
+  return DEFAULT_FIREBASE_CONFIG;
 };
 
 export const isFirebaseConfigured = (): boolean => {
@@ -71,9 +82,6 @@ let dbInstance: Firestore | null = null;
 
 export const initFirebase = (): { app: FirebaseApp | null; auth: Auth | null; db: Firestore | null } => {
   const config = getActiveFirebaseConfig();
-  if (!config) {
-    return { app: null, auth: null, db: null };
-  }
 
   try {
     if (!getApps().length) {
